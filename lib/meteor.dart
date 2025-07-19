@@ -19,7 +19,7 @@ class Meteor extends SpriteComponent with HasGameRef<SkyDefenderGame> {
 
     // Try to load sprite, fall back to colored circle
     try {
-      sprite = await gameRef.loadSprite('m.png');
+      sprite = await gameRef.loadSprite('meteor.png');
     } catch (e) {
       // Fallback to colored circle if sprite not found
       paint = Paint()..color = Colors.red;
@@ -48,7 +48,7 @@ class Meteor extends SpriteComponent with HasGameRef<SkyDefenderGame> {
       // Render sprite if available
       super.render(canvas);
     } else {
-      // Render as circle if no sprite
+      // Render as red circle if no sprite
       canvas.drawCircle(Offset(size.x / 2, size.y / 2), size.x / 2, paint);
     }
   }

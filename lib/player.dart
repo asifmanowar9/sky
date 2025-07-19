@@ -30,6 +30,17 @@ class Player extends SpriteComponent with HasGameRef {
     }
   }
 
+  @override
+  void render(Canvas canvas) {
+    if (sprite != null) {
+      // Render sprite if available
+      super.render(canvas);
+    } else {
+      // Render as blue rectangle if no sprite
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), paint);
+    }
+  }
+
   void moveLeft(double dt) {
     position.x -= speed * dt;
     // Clamp to left screen bound

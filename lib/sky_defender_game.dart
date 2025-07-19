@@ -1,20 +1,51 @@
 import 'dart:math';
-import 'package:flame/events.dart';
+import 'dart:async';
 import 'package:flame/game.dart';
+import 'package:flame/input.dart';
+import 'package:flame/events.dart';
 import 'player.dart';
 import 'meteor.dart';
 import 'bullet.dart';
 
 class SkyDefenderGame extends FlameGame
-    with TapCallbacks, HasCollisionDetection {
+    with TapDetector, PanDetector, HasCollisionDetection {
   late Player player;
 
   double meteorSpawnTimer = 0;
   final double meteorSpawnInterval = 1.5;
+
+  // Add auto-firing variables
+  double bulletFireTimer = 0;
+  final double bulletFireInterval = 0.3;
+
   final Random random = Random();
-  int score = 0;
-  int lives = 3;
+
+  // Add stream controllers for UI updates
+  final StreamController<int> _scoreController =
+      StreamController<int>.broadcast();
+  final StreamController<int> _livesController =
+      StreamController<int>.broadcast();
+
+  Stream<int> get scoreStream => _scoreController.stream;
+  Stream<int> get livesStream => _livesController.stream;
+
+  int _score = 0;
+  int _lives = 3;
   bool isGameOver = false;
+  bool hasGameStarted = false; // Add game state
+
+  // Add getters and setters to trigger stream updates
+  int get score => _score;
+  set score(int value) {
+    _score = value;
+    _scoreController.add(_score);
+  }
+
+  int get lives => _lives;
+  set lives(int value) {
+    _lives = value;
+    _livesController.add(_lives);
+  }
 
   @override
   Future<void> onLoad() async {
@@ -24,22 +55,33 @@ class SkyDefenderGame extends FlameGame
     player = Player();
     add(player);
 
-    // Show score display overlay
-    overlays.add('ScoreDisplay');
+    // Show start screen initially
+    overlays.add('StartScreen');
+
+    // Initialize streams
+    _scoreController.add(_score);
+    _livesController.add(_lives);
   }
 
   @override
   void update(double dt) {
     super.update(dt);
 
-    // Don't update game logic if game is over
-    if (isGameOver) return;
+    // Don't update game logic if game hasn't started or is over
+    if (!hasGameStarted || isGameOver) return;
 
     // Spawn meteors every 1.5 seconds
     meteorSpawnTimer += dt;
     if (meteorSpawnTimer >= meteorSpawnInterval) {
       spawnMeteor();
       meteorSpawnTimer = 0;
+    }
+
+    // Auto-fire bullets continuously
+    bulletFireTimer += dt;
+    if (bulletFireTimer >= bulletFireInterval) {
+      fireBullet();
+      bulletFireTimer = 0;
     }
 
     // Check for collisions between bullets and meteors
@@ -57,7 +99,7 @@ class SkyDefenderGame extends FlameGame
           bullet.destroy();
           meteor.destroy();
 
-          // Increment score
+          // Increment score (this will trigger stream update)
           score += 10;
 
           break; // Exit inner loop since bullet is destroyed
@@ -67,15 +109,29 @@ class SkyDefenderGame extends FlameGame
   }
 
   @override
-  bool onTapDown(TapDownEvent event) {
-    if (isGameOver) {
-      // Game over handling is now done by the overlay button
-      return true;
-    } else {
-      // Fire a bullet from player's position
-      fireBullet();
+  void onTapDown(TapDownInfo info) {
+    // Remove manual firing since we now auto-fire
+  }
+
+  @override
+  void onPanStart(DragStartInfo info) {
+    if (hasGameStarted && !isGameOver) {
+      player.moveTo(info.eventPosition.global.x);
     }
-    return true;
+  }
+
+  @override
+  void onPanUpdate(DragUpdateInfo info) {
+    if (hasGameStarted && !isGameOver) {
+      player.moveTo(info.eventPosition.global.x);
+    }
+  }
+
+  void startGame() {
+    hasGameStarted = true;
+    overlays.remove('StartScreen');
+    overlays.add('ScoreDisplay');
+    print('Game Started!');
   }
 
   void spawnMeteor() {
@@ -93,8 +149,9 @@ class SkyDefenderGame extends FlameGame
 
   // Called when a meteor reaches the bottom
   void onMeteorMissed() {
-    if (isGameOver) return;
+    if (isGameOver || !hasGameStarted) return;
 
+    // Decrease lives (this will trigger stream update)
     lives--;
 
     if (lives <= 0) {
@@ -115,13 +172,45 @@ class SkyDefenderGame extends FlameGame
   void restartGame() {
     // Reset game state
     isGameOver = false;
-    score = 0;
-    lives = 3;
+    hasGameStarted = true; // Start game immediately
+    score = 0; // This will trigger stream update
+    lives = 3; // This will trigger stream update
     meteorSpawnTimer = 0;
+    bulletFireTimer = 0;
 
     // Remove all game objects except player
     removeWhere((component) => component is Meteor || component is Bullet);
 
+    // Go directly to game (skip start screen)
+    overlays.remove('GameOver');
+    overlays.add('ScoreDisplay');
+
     print('Game Restarted!');
+  }
+
+  void goToStartScreen() {
+    // Reset game state
+    isGameOver = false;
+    hasGameStarted = false; // Return to start screen
+    score = 0; // This will trigger stream update
+    lives = 3; // This will trigger stream update
+    meteorSpawnTimer = 0;
+    bulletFireTimer = 0;
+
+    // Remove all game objects except player
+    removeWhere((component) => component is Meteor || component is Bullet);
+
+    // Go back to start screen
+    overlays.remove('GameOver');
+    overlays.add('StartScreen');
+
+    print('Returned to Start Screen!');
+  }
+
+  @override
+  void onRemove() {
+    _scoreController.close();
+    _livesController.close();
+    super.onRemove();
   }
 }

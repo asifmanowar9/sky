@@ -33,38 +33,73 @@ class GameOverOverlay extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              Text(
-                'Final Score: ${game.score}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w500,
-                ),
+              StreamBuilder<int>(
+                stream: game.scoreStream,
+                initialData: game.score,
+                builder: (context, snapshot) {
+                  return Text(
+                    'Final Score: ${snapshot.data ?? 0}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: () {
-                  game.restartGame();
-                  game.overlays.remove('GameOver');
-                  game.overlays.add('ScoreDisplay');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 16,
+
+              // Button Row with Restart and Home buttons
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Home Button
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      game.goToStartScreen();
+                    },
+                    icon: const Icon(Icons.home, size: 20),
+                    label: const Text('HOME'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  textStyle: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+
+                  // Restart Button
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      game.restartGame();
+                    },
+                    icon: const Icon(Icons.refresh, size: 20),
+                    label: const Text('RESTART'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
-                child: const Text('RESTART'),
+                ],
               ),
+
               const SizedBox(height: 16),
               const Text(
-                'Defend the sky from meteors!\nTap to shoot bullets.',
+                'Defend the sky from meteors!\nAutomatic shooting, drag to move.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),

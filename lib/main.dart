@@ -3,6 +3,7 @@ import 'package:flame/game.dart';
 import 'sky_defender_game.dart';
 import 'score_display.dart';
 import 'game_over.dart';
+import 'start_screen.dart';
 
 void main() {
   runApp(const SkyDefenderApp());
@@ -19,6 +20,7 @@ class SkyDefenderApp extends StatelessWidget {
       home: GameWidget<SkyDefenderGame>.controlled(
         gameFactory: SkyDefenderGame.new,
         overlayBuilderMap: {
+          'StartScreen': (context, game) => StartScreen(game: game),
           'ScoreDisplay': (context, game) => ScoreDisplay(game: game),
           'GameOver': (context, game) => GameOverOverlay(game: game),
         },
