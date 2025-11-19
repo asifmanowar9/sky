@@ -1,9 +1,11 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
-class Bullet extends SpriteComponent with HasGameRef {
+class Bullet extends PositionComponent with HasGameReference {
   static const double speed = 400.0;
   late double gameHeight;
+  Sprite? sprite;
+  final Paint paint = Paint()..color = Colors.yellow;
 
   @override
   Future<void> onLoad() async {
@@ -14,14 +16,14 @@ class Bullet extends SpriteComponent with HasGameRef {
     anchor = Anchor.center;
 
     // Get game dimensions
-    gameHeight = gameRef.size.y;
+    gameHeight = game.size.y;
 
     // Try to load sprite, fall back to colored rectangle
     try {
-      sprite = await gameRef.loadSprite('bullet.webp');
+      sprite = await game.loadSprite('bullet.webp');
     } catch (e) {
       // Fallback to colored rectangle if sprite not found
-      paint = Paint()..color = Colors.yellow;
+      sprite = null;
     }
   }
 
@@ -42,7 +44,7 @@ class Bullet extends SpriteComponent with HasGameRef {
   void render(Canvas canvas) {
     if (sprite != null) {
       // Render sprite if available
-      super.render(canvas);
+      sprite!.render(canvas, size: size);
     } else {
       // Render as yellow rectangle if no sprite
       canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), paint);

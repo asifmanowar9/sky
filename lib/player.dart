@@ -1,10 +1,12 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
-class Player extends SpriteComponent with HasGameRef {
+class Player extends PositionComponent with HasGameReference {
   static const double speed = 300.0;
   late double gameWidth;
   late double gameHeight;
+  Sprite? sprite;
+  final Paint paint = Paint()..color = Colors.blue;
 
   @override
   Future<void> onLoad() async {
@@ -15,18 +17,18 @@ class Player extends SpriteComponent with HasGameRef {
     anchor = Anchor.center;
 
     // Get game dimensions
-    gameWidth = gameRef.size.x;
-    gameHeight = gameRef.size.y;
+    gameWidth = game.size.x;
+    gameHeight = game.size.y;
 
     // Position at bottom center
     position = Vector2(gameWidth / 2, gameHeight - size.y / 2 - 50);
 
     // Try to load sprite, fall back to colored rectangle
     try {
-      sprite = await gameRef.loadSprite('plane.jpg');
+      sprite = await game.loadSprite('plane.jpg');
     } catch (e) {
       // Fallback to colored rectangle if sprite not found
-      paint = Paint()..color = Colors.blue;
+      sprite = null;
     }
   }
 
@@ -34,7 +36,7 @@ class Player extends SpriteComponent with HasGameRef {
   void render(Canvas canvas) {
     if (sprite != null) {
       // Render sprite if available
-      super.render(canvas);
+      sprite!.render(canvas, size: size);
     } else {
       // Render as blue rectangle if no sprite
       canvas.drawRect(Rect.fromLTWH(0, 0, size.x, size.y), paint);
