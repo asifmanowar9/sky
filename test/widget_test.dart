@@ -1,15 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/material.dart';
 import 'package:sky/difficulty_manager.dart';
 import 'package:sky/power_up_state.dart';
-import 'package:sky/meteor.dart';
+import 'package:sky/meteor_component.dart';
 import 'package:sky/score_manager.dart';
-import 'package:sky/particle_effect.dart';
-import 'package:flame/components.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sky/sky_defender_game.dart';
-import 'package:sky/bullet.dart';
-import 'package:sky/power_up.dart';
 
 void main() {
   // Integration Tests for New Features
@@ -305,66 +300,6 @@ void main() {
       final loadedScore = await manager2.getHighScore();
 
       expect(loadedScore, 750);
-    });
-  });
-
-  group('Particle Effect Integration', () {
-    test('particle effect spawns correct number of particles', () {
-      final effect = ParticleEffect(
-        color: const Color(0xFFFF0000),
-        position: Vector2(100, 100),
-      );
-
-      effect.spawn(count: 10);
-
-      expect(effect.particles.length, 10);
-    });
-
-    test('particles have velocity and lifetime', () {
-      final effect = ParticleEffect(
-        color: const Color(0xFFFF0000),
-        position: Vector2(100, 100),
-      );
-
-      effect.spawn(count: 5, lifetime: 0.5);
-
-      for (final particle in effect.particles) {
-        expect(particle.isAlive, true);
-        expect(particle.velocity.length, greaterThan(0));
-      }
-    });
-
-    test('particles die after lifetime expires', () {
-      final effect = ParticleEffect(
-        color: const Color(0xFFFF0000),
-        position: Vector2(100, 100),
-      );
-
-      effect.spawn(count: 5, lifetime: 0.1);
-
-      // Update for longer than lifetime
-      for (int i = 0; i < 20; i++) {
-        effect.update(0.01); // 0.2 seconds total
-      }
-
-      // All particles should be dead and removed
-      expect(effect.particles.isEmpty, true);
-    });
-
-    test('particle effect removes itself when all particles are gone', () {
-      final effect = ParticleEffect(
-        color: const Color(0xFFFF0000),
-        position: Vector2(100, 100),
-      );
-
-      effect.spawn(count: 3, lifetime: 0.1);
-
-      // Update until all particles expire
-      for (int i = 0; i < 20; i++) {
-        effect.update(0.01);
-      }
-
-      expect(effect.particles.isEmpty, true);
     });
   });
 

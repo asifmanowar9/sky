@@ -1,38 +1,106 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    Base href is replaced by `--base-href` at build time.
+    Must start and end with "/" for correct asset resolution.
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <!-- Prevent zoom / scroll on mobile browsers so the game fills the screen -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0,
+                 maximum-scale=1.0, user-scalable=no,
+                 viewport-fit=cover">
 
-  <!-- iOS meta tags & icons -->
+  <meta name="description"
+        content="Sky Defender – shoot down meteors and defend the sky!">
+
+  <!-- Theme color matches the game's deep-space palette -->
+  <meta name="theme-color" content="#0A1628">
+
+  <!-- PWA / home-screen meta tags -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="sky">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Sky Defender">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png">
 
-  <title>sky</title>
+  <title>Sky Defender</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Loading screen – shown while Flutter engine initialises */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #0A1628;
+      overflow: hidden;
+    }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #E5E7EB;
+      font-family: system-ui, -apple-system, sans-serif;
+      gap: 20px;
+    }
+
+    #loading h1 {
+      font-size: clamp(1.5rem, 5vw, 2.5rem);
+      letter-spacing: 4px;
+      margin: 0;
+      background: linear-gradient(135deg, #6B46C1, #00D9FF);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #loading p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #9CA3AF;
+      letter-spacing: 1px;
+    }
+
+    .loader {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(107, 70, 193, 0.3);
+      border-top-color: #00D9FF;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
+  <!-- Shown until the Flutter engine mounts the canvas -->
+  <div id="loading">
+    <h1>SKY DEFENDER</h1>
+    <div class="loader"></div>
+    <p>LOADING…</p>
+  </div>
+
+  <script>
+    // Hide loading overlay once Flutter has initialised.
+    window.addEventListener('flutter-first-frame', function () {
+      const loader = document.getElementById('loading');
+      if (loader) loader.style.display = 'none';
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

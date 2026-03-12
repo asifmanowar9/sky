@@ -1,11 +1,14 @@
 import 'dart:async';
-import 'power_up.dart';
+import 'power_up_component.dart';
 
 class PowerUpState {
   bool rapidFireActive = false;
   bool shieldActive = false;
   Timer? rapidFireTimer;
   Timer? shieldTimer;
+
+  // Callback for updating bullet fire rate
+  void Function(bool isRapidFire)? onRapidFireChanged;
 
   // Stream controller for power-up state updates
   final StreamController<PowerUpState> _stateController =
@@ -25,11 +28,17 @@ class PowerUpState {
     rapidFireActive = true;
     _notifyStateChange();
 
+    // Notify callback to update bullet fire rate
+    onRapidFireChanged?.call(true);
+
     // Set timer for automatic deactivation
     rapidFireTimer = Timer(rapidFireDuration, () {
       rapidFireActive = false;
       rapidFireTimer = null;
       _notifyStateChange();
+
+      // Notify callback to restore normal fire rate
+      onRapidFireChanged?.call(false);
     });
   }
 
@@ -55,6 +64,8 @@ class PowerUpState {
         rapidFireTimer?.cancel();
         rapidFireTimer = null;
         rapidFireActive = false;
+        // Notify callback to restore normal fire rate
+        onRapidFireChanged?.call(false);
         break;
       case PowerUpType.shield:
         shieldTimer?.cancel();
@@ -77,6 +88,12 @@ class PowerUpState {
     shieldTimer?.cancel();
     rapidFireTimer = null;
     shieldTimer = null;
+
+    // Restore normal fire rate if rapid fire was active
+    if (rapidFireActive) {
+      onRapidFireChanged?.call(false);
+    }
+
     rapidFireActive = false;
     shieldActive = false;
     _notifyStateChange();

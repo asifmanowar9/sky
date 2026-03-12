@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../design_system.dart';
+import '../platform_utils.dart';
 
 /// A reusable glassmorphic container widget with backdrop filter effects
 ///
@@ -57,6 +58,10 @@ class GlassmorphicContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Reduce blur intensity on mobile for better GPU performance.
+    final effectiveSigmaX = PlatformUtils.adaptiveBlur(sigmaX);
+    final effectiveSigmaY = PlatformUtils.adaptiveBlur(sigmaY);
+
     final effectiveBorderRadius =
         borderRadius ??
         BorderRadius.circular(
@@ -75,7 +80,10 @@ class GlassmorphicContainer extends StatelessWidget {
     return ClipRRect(
       borderRadius: effectiveBorderRadius,
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
+        filter: ImageFilter.blur(
+          sigmaX: effectiveSigmaX,
+          sigmaY: effectiveSigmaY,
+        ),
         child: Container(
           padding: effectivePadding,
           decoration: BoxDecoration(

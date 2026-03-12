@@ -1,18 +1,22 @@
 import 'dart:math';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flame/game.dart';
+import 'package:flame/components.dart';
 import 'package:flame/input.dart';
-import 'package:flame/events.dart';
+import 'package:flame/particles.dart';
+import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'player.dart';
-import 'meteor.dart';
-import 'bullet.dart';
+import 'player_component.dart';
+import 'meteor_component.dart';
+import 'bullet_component.dart';
+import 'component_pool.dart';
 import 'difficulty_manager.dart';
-import 'power_up.dart';
+import 'power_up_component.dart';
 import 'power_up_state.dart';
-import 'particle_effect.dart';
 import 'score_manager.dart';
+import 'platform_utils.dart';
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -25,14 +29,24 @@ final logger = Logger(
 );
 
 class SkyDefenderGame extends FlameGame
-    with TapDetector, PanDetector, HasCollisionDetection {
+    with HasCollisionDetection, HasKeyboardHandlerComponents {
   late Player player;
 
-  double meteorSpawnTimer = 0;
+  // Shared sprites for components
+  Sprite? meteorSprite;
+  Sprite? bulletSprite;
+  Sprite? playerSprite;
+  Sprite? rapidFireSprite;
+  Sprite? shieldSprite;
 
-  // Add auto-firing variables
-  double bulletFireTimer = 0;
-  double bulletFireInterval = 0.3;
+  // Component pools
+  ComponentPool<Bullet>? bulletPool;
+  ComponentPool<Meteor>? meteorPool;
+
+  // Timer components
+  late TimerComponent meteorSpawnTimerComponent;
+  late TimerComponent bulletFireTimerComponent;
+  late TimerComponent powerUpSpawnTimerComponent;
 
   final Random random = Random();
 
@@ -41,8 +55,6 @@ class SkyDefenderGame extends FlameGame
 
   // Power-up system
   final PowerUpState powerUpState = PowerUpState();
-  double powerUpSpawnTimer = 0;
-  double nextPowerUpSpawn = 15.0; // Random 10-20s
 
   // High score system
   final ScoreManager scoreManager = ScoreManager();
@@ -71,11 +83,6 @@ class SkyDefenderGame extends FlameGame
   bool hasGameStarted = false; // Add game state
   bool isPaused = false; // Pause state
 
-  // Screen shake variables
-  Vector2 _cameraOffset = Vector2.zero();
-  double _shakeIntensity = 0.0;
-  double _shakeDuration = 0.0;
-
   // Add getters and setters to trigger stream updates
   int get score => _score;
   set score(int value) {
@@ -86,9 +93,12 @@ class SkyDefenderGame extends FlameGame
     // Update difficulty based on new score
     difficultyManager.updateDifficulty(_score);
 
-    // If wave changed, notify listeners
+    // If wave changed, notify listeners and update meteor spawn timer
     if (difficultyManager.currentWave != previousWave) {
       _waveController.add(difficultyManager.currentWave);
+      // Update meteor spawn timer period for new difficulty
+      meteorSpawnTimerComponent.timer.limit = difficultyManager
+          .getMeteorSpawnInterval();
       logger.i('Wave ${difficultyManager.currentWave} started!');
     }
   }
@@ -114,9 +124,68 @@ class SkyDefenderGame extends FlameGame
     // Load high score from storage
     _highScore = await scoreManager.getHighScore();
 
-    // Add player component
+    // Load common sprites once at game level
+    await _loadSharedSprites();
+
+    // Initialize component pools
+    bulletPool = ComponentPool<Bullet>(
+      factory: () => Bullet(),
+      initialSize: 20,
+      maxSize: 100,
+    );
+
+    meteorPool = ComponentPool<Meteor>(
+      factory: () => Meteor(),
+      initialSize: 15,
+      maxSize: 50,
+    );
+
+    // Initialize timer components
+    meteorSpawnTimerComponent = TimerComponent(
+      period: difficultyManager.getMeteorSpawnInterval(),
+      repeat: true,
+      autoStart: false, // Don't start until game begins
+      onTick: () => spawnMeteor(),
+    );
+
+    bulletFireTimerComponent = TimerComponent(
+      period: 0.3,
+      repeat: true,
+      autoStart: false, // Don't start until game begins
+      onTick: () => fireBullet(),
+    );
+
+    powerUpSpawnTimerComponent = TimerComponent(
+      period: 15.0,
+      repeat: true,
+      autoStart: false, // Don't start until game begins
+      onTick: () {
+        spawnPowerUp();
+        // Randomize next spawn interval (10-20 seconds)
+        powerUpSpawnTimerComponent.timer.limit =
+            10.0 + random.nextDouble() * 10.0;
+      },
+    );
+
+    // Add timer components to game
+    await add(meteorSpawnTimerComponent);
+    await add(bulletFireTimerComponent);
+    await add(powerUpSpawnTimerComponent);
+
+    // Set up rapid fire callback to update bullet fire timer
+    powerUpState.onRapidFireChanged = (bool isRapidFire) {
+      if (isRapidFire) {
+        // 50% faster firing (half the interval)
+        bulletFireTimerComponent.timer.limit = 0.15;
+      } else {
+        // Restore normal firing rate
+        bulletFireTimerComponent.timer.limit = 0.3;
+      }
+    };
+
+    // Add player component and await its initialization
     player = Player();
-    add(player);
+    await add(player);
 
     // Show start screen initially
     overlays.add('StartScreen');
@@ -135,184 +204,80 @@ class SkyDefenderGame extends FlameGame
     // Don't update game logic if paused
     if (isPaused) return;
 
-    // Update screen shake
-    if (_shakeDuration > 0) {
-      _shakeDuration -= dt;
-      // Random offset for shake effect
-      _cameraOffset = Vector2(
-        (random.nextDouble() - 0.5) * _shakeIntensity * 2,
-        (random.nextDouble() - 0.5) * _shakeIntensity * 2,
-      );
-      camera.viewfinder.position = _cameraOffset;
+    // Timers are now handled by TimerComponent - no manual timer updates needed
+    // Collisions handled by Flame's collision detection system
+  }
 
-      if (_shakeDuration <= 0) {
-        // Reset camera when shake ends
-        _cameraOffset = Vector2.zero();
-        camera.viewfinder.position = _cameraOffset;
+  /// Called when player collides with a meteor
+  void onPlayerHitMeteor(Meteor meteor) {
+    // Spawn particle effect at collision point
+    spawnParticleEffect(
+      position: meteor.position,
+      color: meteor.getColor(),
+      particleCount: 15,
+    );
+
+    // Trigger screen shake effect
+    triggerScreenShake(intensity: 15.0, duration: 0.4);
+
+    // Check if shield is active
+    if (powerUpState.shieldActive) {
+      // Shield prevents life loss and is consumed
+      powerUpState.consumeShield();
+      logger.i('Shield absorbed meteor collision!');
+    } else {
+      // Decrease lives (this will trigger stream update)
+      lives--;
+      logger.w('Player hit by meteor! Lives remaining: $lives');
+
+      if (lives <= 0) {
+        gameOver();
       }
     }
 
-    // Don't update game logic if game hasn't started or is over
-    if (!hasGameStarted || isGameOver) return;
-
-    // Spawn meteors based on difficulty
-    meteorSpawnTimer += dt;
-    double currentSpawnInterval = difficultyManager.getMeteorSpawnInterval();
-    if (meteorSpawnTimer >= currentSpawnInterval) {
-      spawnMeteor();
-      meteorSpawnTimer = 0;
-    }
-
-    // Spawn power-ups at random intervals
-    powerUpSpawnTimer += dt;
-    if (powerUpSpawnTimer >= nextPowerUpSpawn) {
-      spawnPowerUp();
-      powerUpSpawnTimer = 0;
-      // Set next spawn time randomly between 10-20 seconds
-      nextPowerUpSpawn = 10.0 + random.nextDouble() * 10.0;
-    }
-
-    // Auto-fire bullets continuously with modified rate if rapid fire is active
-    double currentFireInterval = powerUpState.rapidFireActive
-        ? bulletFireInterval *
-              0.5 // 50% faster (half the interval)
-        : bulletFireInterval;
-
-    bulletFireTimer += dt;
-    if (bulletFireTimer >= currentFireInterval) {
-      fireBullet();
-      bulletFireTimer = 0;
-    }
-
-    // Check for collisions
-    checkCollisions();
-  }
-
-  void checkCollisions() {
-    final bullets = children.whereType<Bullet>().toList();
-    final meteors = children.whereType<Meteor>().toList();
-    final powerUps = children.whereType<PowerUp>().toList();
-
-    // Check bullet-meteor collisions
-    for (final bullet in bullets) {
-      for (final meteor in meteors) {
-        if (bullet.toRect().overlaps(meteor.toRect())) {
-          // Collision detected!
-
-          // Spawn particle effect at collision point
-          spawnParticleEffect(
-            position: meteor.position,
-            color: meteor.getColor(),
-            particleCount: 10,
-          );
-
-          bullet.destroy();
-
-          // Award points based on meteor type
-          score += meteor.pointValue;
-
-          meteor.destroy();
-
-          break; // Exit inner loop since bullet is destroyed
-        }
-      }
-    }
-
-    // Check player-meteor collisions
-    for (final meteor in meteors) {
-      if (player.toRect().overlaps(meteor.toRect())) {
-        // Collision detected with player!
-
-        // Spawn particle effect at collision point
-        spawnParticleEffect(
-          position: meteor.position,
-          color: meteor.getColor(),
-          particleCount: 15,
-        );
-
-        // Trigger screen shake effect
-        triggerScreenShake(intensity: 15.0, duration: 0.4);
-
-        // Check if shield is active
-        if (powerUpState.shieldActive) {
-          // Shield prevents life loss and is consumed
-          powerUpState.consumeShield();
-          logger.i('Shield absorbed meteor collision!');
-        } else {
-          // Decrease lives (this will trigger stream update)
-          lives--;
-          logger.w('Player hit by meteor! Lives remaining: $lives');
-
-          if (lives <= 0) {
-            gameOver();
-          }
-        }
-
-        // Destroy the meteor
-        meteor.destroy();
-      }
-    }
-
-    // Check player-powerup collisions
-    for (final powerUp in powerUps) {
-      if (player.toRect().overlaps(powerUp.toRect())) {
-        // Spawn particle effect at collection point
-        spawnParticleEffect(
-          position: powerUp.position,
-          color: powerUp.getColor(),
-          particleCount: 12,
-        );
-
-        // Collect power-up
-        powerUp.onCollected();
-
-        // Activate power-up effect
-        switch (powerUp.type) {
-          case PowerUpType.rapidFire:
-            powerUpState.activateRapidFire();
-            logger.i('Rapid Fire activated!');
-            break;
-          case PowerUpType.shield:
-            powerUpState.activateShield();
-            logger.i('Shield activated!');
-            break;
-        }
-      }
-    }
-  }
-
-  @override
-  void onTapDown(TapDownInfo info) {
-    // Remove manual firing since we now auto-fire
-  }
-
-  @override
-  void onPanStart(DragStartInfo info) {
-    if (hasGameStarted && !isGameOver) {
-      player.moveTo(info.eventPosition.global.x);
-    }
-  }
-
-  @override
-  void onPanUpdate(DragUpdateInfo info) {
-    if (hasGameStarted && !isGameOver) {
-      player.moveTo(info.eventPosition.global.x);
-    }
+    // Destroy the meteor
+    meteor.destroy();
   }
 
   void startGame() {
     hasGameStarted = true;
     overlays.remove('StartScreen');
     overlays.add('ScoreDisplay');
+
+    // Start all timer components
+    meteorSpawnTimerComponent.timer.start();
+    bulletFireTimerComponent.timer.start();
+    powerUpSpawnTimerComponent.timer.start();
+
     logger.i('Game started');
   }
 
   void spawnMeteor() {
     // Get current difficulty speed
     double currentSpeed = difficultyManager.getMeteorSpeed();
-    final meteor = Meteor.random(speed: currentSpeed);
-    // Random X position across screen width
-    meteor.position = Vector2(random.nextDouble() * size.x, -meteor.size.y);
+
+    // Acquire meteor from pool
+    final meteor = meteorPool!.acquire();
+
+    // Determine random meteor type with weighted selection
+    final roll = random.nextDouble();
+    MeteorType selectedType;
+    if (roll < 0.6) {
+      selectedType = MeteorType.small; // 60% chance
+    } else if (roll < 0.9) {
+      selectedType = MeteorType.medium; // 30% chance
+    } else {
+      selectedType = MeteorType.large; // 10% chance
+    }
+
+    // Reset meteor with new position, speed, and type
+    meteor.reset(
+      newPosition: Vector2(random.nextDouble() * size.x, -meteor.size.y),
+      newSpeed: currentSpeed,
+      newType: selectedType,
+    );
+
+    // Add meteor to game (no need to await in timer callback)
     add(meteor);
   }
 
@@ -329,8 +294,8 @@ class SkyDefenderGame extends FlameGame
   }
 
   void fireBullet() {
-    final bullet = Bullet();
-    bullet.position = player.centerPosition;
+    final bullet = bulletPool!.acquire();
+    bullet.reset(newPosition: player.centerPosition);
     add(bullet);
   }
 
@@ -357,25 +322,94 @@ class SkyDefenderGame extends FlameGame
     }
   }
 
-  /// Spawn a particle effect at the specified position
+  // Called when player collects a power-up
+  void onPlayerCollectPowerUp(PowerUp powerUp) {
+    // Spawn particle effect at collection point
+    spawnParticleEffect(
+      position: powerUp.position,
+      color: powerUp.getColor(),
+      particleCount: 12,
+    );
+
+    // Activate power-up effect
+    powerUp.activate();
+
+    // Remove power-up
+    powerUp.onCollected();
+
+    logger.i('Power-up collected: ${powerUp.type.name}');
+  }
+
+  /// Spawn a particle effect at the specified position using Flame's particle system
   void spawnParticleEffect({
     required Vector2 position,
     required Color color,
     int particleCount = 10,
     double lifetime = 0.4,
   }) {
-    final effect = ParticleEffect(color: color, position: position);
-    effect.spawn(count: particleCount, lifetime: lifetime);
-    add(effect);
+    // Reduce particle count on mobile to improve GPU performance.
+    final adaptiveCount = PlatformUtils.adaptiveParticleCount(particleCount);
+
+    // Use Flame's particle system
+    final particle = Particle.generate(
+      count: adaptiveCount,
+      lifespan: lifetime,
+      generator: (i) {
+        final angle = random.nextDouble() * 2 * pi;
+        final speed = 50.0 + random.nextDouble() * 100.0;
+
+        return AcceleratedParticle(
+          acceleration: Vector2(0, 100), // Gravity effect
+          speed: Vector2(cos(angle), sin(angle)) * speed,
+          position: Vector2.zero(),
+          child: CircleParticle(radius: 3.0, paint: Paint()..color = color),
+        );
+      },
+    );
+
+    add(
+      ParticleSystemComponent(
+        particle: particle,
+        position: position,
+        priority: 8, // Render particles above most entities but below player
+      ),
+    );
   }
 
-  /// Trigger screen shake effect
+  /// Trigger screen shake effect using Flame's effect system
   void triggerScreenShake({
     required double intensity,
     required double duration,
   }) {
-    _shakeIntensity = intensity;
-    _shakeDuration = duration;
+    // Scale intensity down on mobile to avoid jarring small-screen experience.
+    final effectiveIntensity = PlatformUtils.adaptiveShakeIntensity(intensity);
+
+    // Limit the number of MoveEffect steps for performance.
+    // Fewer allocations = less GC pressure, especially on mobile.
+    final shakeCount = min(
+      PlatformUtils.maxShakeSteps,
+      (duration * 20).toInt().clamp(1, PlatformUtils.maxShakeSteps),
+    );
+    final effects = <Effect>[];
+
+    // Generate random shake movements
+    for (int i = 0; i < shakeCount; i++) {
+      effects.add(
+        MoveEffect.by(
+          Vector2(
+            (random.nextDouble() - 0.5) * effectiveIntensity * 2,
+            (random.nextDouble() - 0.5) * effectiveIntensity * 2,
+          ),
+          EffectController(duration: duration / shakeCount),
+        ),
+      );
+    }
+
+    // Add final move effect to return camera to center
+    effects.add(MoveEffect.to(Vector2.zero(), EffectController(duration: 0.1)));
+
+    // Apply the sequence effect to the camera viewfinder
+    camera.viewfinder.add(SequenceEffect(effects));
   }
 
   /// Pause the game
@@ -433,18 +467,31 @@ class SkyDefenderGame extends FlameGame
     // Reset power-up state
     powerUpState.reset();
 
-    // Reset screen shake
-    _shakeDuration = 0;
-    _shakeIntensity = 0;
-    _cameraOffset = Vector2.zero();
-    camera.viewfinder.position = _cameraOffset;
+    // Reset camera position (clear any active shake effects)
+    camera.viewfinder.position = Vector2.zero();
 
     score = 0; // This will trigger stream update
     lives = 3; // This will trigger stream update
-    meteorSpawnTimer = 0;
-    bulletFireTimer = 0;
-    powerUpSpawnTimer = 0;
-    nextPowerUpSpawn = 15.0;
+
+    // Reset timer components
+    meteorSpawnTimerComponent.timer.reset();
+    bulletFireTimerComponent.timer.reset();
+    powerUpSpawnTimerComponent.timer.reset();
+
+    // Reset timer periods to initial values
+    meteorSpawnTimerComponent.timer.limit = difficultyManager
+        .getMeteorSpawnInterval();
+    bulletFireTimerComponent.timer.limit = 0.3;
+    powerUpSpawnTimerComponent.timer.limit = 15.0;
+
+    // Start timers
+    meteorSpawnTimerComponent.timer.start();
+    bulletFireTimerComponent.timer.start();
+    powerUpSpawnTimerComponent.timer.start();
+
+    // Clear component pools
+    bulletPool?.clear();
+    meteorPool?.clear();
 
     // Remove all game objects except player
     removeWhere(
@@ -452,7 +499,7 @@ class SkyDefenderGame extends FlameGame
           component is Meteor ||
           component is Bullet ||
           component is PowerUp ||
-          component is ParticleEffect,
+          component is ParticleSystemComponent,
     );
 
     // Go directly to game (skip start screen)
@@ -482,18 +529,29 @@ class SkyDefenderGame extends FlameGame
     // Reset power-up state
     powerUpState.reset();
 
-    // Reset screen shake
-    _shakeDuration = 0;
-    _shakeIntensity = 0;
-    _cameraOffset = Vector2.zero();
-    camera.viewfinder.position = _cameraOffset;
+    // Reset camera position (clear any active shake effects)
+    camera.viewfinder.position = Vector2.zero();
 
     score = 0; // This will trigger stream update
     lives = 3; // This will trigger stream update
-    meteorSpawnTimer = 0;
-    bulletFireTimer = 0;
-    powerUpSpawnTimer = 0;
-    nextPowerUpSpawn = 15.0;
+
+    // Stop and reset timer components
+    meteorSpawnTimerComponent.timer.stop();
+    bulletFireTimerComponent.timer.stop();
+    powerUpSpawnTimerComponent.timer.stop();
+    meteorSpawnTimerComponent.timer.reset();
+    bulletFireTimerComponent.timer.reset();
+    powerUpSpawnTimerComponent.timer.reset();
+
+    // Reset timer periods to initial values
+    meteorSpawnTimerComponent.timer.limit = difficultyManager
+        .getMeteorSpawnInterval();
+    bulletFireTimerComponent.timer.limit = 0.3;
+    powerUpSpawnTimerComponent.timer.limit = 15.0;
+
+    // Clear component pools
+    bulletPool?.clear();
+    meteorPool?.clear();
 
     // Remove all game objects except player
     removeWhere(
@@ -501,7 +559,7 @@ class SkyDefenderGame extends FlameGame
           component is Meteor ||
           component is Bullet ||
           component is PowerUp ||
-          component is ParticleEffect,
+          component is ParticleSystemComponent,
     );
 
     // Go back to start screen
@@ -512,13 +570,183 @@ class SkyDefenderGame extends FlameGame
     logger.i('Returned to start screen');
   }
 
+  /// Load shared sprites once at game level for reuse across components
+  Future<void> _loadSharedSprites() async {
+    // Load player sprite
+    try {
+      playerSprite = await Sprite.load('plane.jpg');
+    } catch (e) {
+      logger.w('Failed to load player sprite, using fallback');
+      playerSprite = await _createFallbackPlayerSprite();
+    }
+
+    // Load meteor sprite
+    try {
+      meteorSprite = await Sprite.load('meteor.png');
+    } catch (e) {
+      logger.w('Failed to load meteor sprite, using fallback');
+      meteorSprite = await _createFallbackMeteorSprite();
+    }
+
+    // Load bullet sprite
+    try {
+      bulletSprite = await Sprite.load('bullet.webp');
+    } catch (e) {
+      logger.w('Failed to load bullet sprite, using fallback');
+      bulletSprite = await _createFallbackBulletSprite();
+    }
+
+    // Load power-up sprites
+    try {
+      rapidFireSprite = await Sprite.load('rapidfire.png');
+    } catch (e) {
+      logger.w('Failed to load rapid fire sprite, using fallback');
+      rapidFireSprite = await _createFallbackRapidFireSprite();
+    }
+
+    try {
+      shieldSprite = await Sprite.load('shield.png');
+    } catch (e) {
+      logger.w('Failed to load shield sprite, using fallback');
+      shieldSprite = await _createFallbackShieldSprite();
+    }
+  }
+
+  /// Create fallback player sprite
+  Future<Sprite> _createFallbackPlayerSprite() async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()..color = Colors.blue;
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, 50, 50), paint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(50, 50);
+
+    return Sprite(image);
+  }
+
+  /// Create fallback meteor sprite
+  Future<Sprite> _createFallbackMeteorSprite() async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()..color = Colors.red;
+
+    canvas.drawCircle(const Offset(30, 30), 30, paint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(60, 60);
+
+    return Sprite(image);
+  }
+
+  /// Create fallback bullet sprite
+  Future<Sprite> _createFallbackBulletSprite() async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()..color = Colors.yellow;
+
+    canvas.drawRect(Rect.fromLTWH(0, 0, 5, 10), paint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(5, 10);
+
+    return Sprite(image);
+  }
+
+  /// Create fallback rapid fire sprite
+  Future<Sprite> _createFallbackRapidFireSprite() async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    // Draw yellow star
+    _drawStar(canvas, 20, 20, 5, 20, 10, Colors.yellow);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(40, 40);
+
+    return Sprite(image);
+  }
+
+  /// Create fallback shield sprite
+  Future<Sprite> _createFallbackShieldSprite() async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    canvas.drawCircle(const Offset(20, 20), 18, paint);
+    canvas.drawCircle(const Offset(20, 20), 18, borderPaint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(40, 40);
+
+    return Sprite(image);
+  }
+
+  /// Helper method to draw a star shape
+  void _drawStar(
+    Canvas canvas,
+    double cx,
+    double cy,
+    int points,
+    double outerRadius,
+    double innerRadius,
+    Color color,
+  ) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    final angle = pi / points;
+
+    for (int i = 0; i < points * 2; i++) {
+      final radius = i.isEven ? outerRadius : innerRadius;
+      final x = cx + radius * cos(i * angle - pi / 2);
+      final y = cy + radius * sin(i * angle - pi / 2);
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
   @override
   void onRemove() {
+    // Close stream controllers
     _scoreController.close();
     _livesController.close();
     _waveController.close();
     _highScoreController.close();
+
+    // Dispose power-up state (includes timers)
     powerUpState.dispose();
+
+    // Clear component pools
+    bulletPool?.clear();
+    meteorPool?.clear();
+
+    // Stop and remove timer components
+    meteorSpawnTimerComponent.timer.stop();
+    bulletFireTimerComponent.timer.stop();
+    powerUpSpawnTimerComponent.timer.stop();
+
+    // Remove any active effects from camera
+    camera.viewfinder.children.whereType<Effect>().forEach((effect) {
+      effect.removeFromParent();
+    });
+
     super.onRemove();
   }
 }

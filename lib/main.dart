@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flame/game.dart';
 import 'sky_defender_game.dart';
 import 'score_display.dart';
@@ -7,7 +9,26 @@ import 'start_screen.dart';
 import 'pause_menu.dart';
 import 'design_system.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (!kIsWeb) {
+    // Lock to portrait on mobile devices.
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    // Transparent status bar with light icons to complement the dark game UI.
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+  }
+
   runApp(const SkyDefenderApp());
 }
 
@@ -18,7 +39,15 @@ class SkyDefenderApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sky Defender',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        // Prevent text scaling from breaking game UI layout.
+        textTheme: const TextTheme().apply(fontSizeFactor: 1.0),
+      ),
+      // Allow both touch and mouse scroll on web/desktop.
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        scrollbars: false,
+      ),
       home: const GameScreen(),
       debugShowCheckedModeBanner: false,
     );
@@ -45,7 +74,7 @@ class _GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
 
         // Handle back button based on game state
