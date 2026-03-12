@@ -17,15 +17,15 @@ fi
 
 export PATH="$FLUTTER_DIR/bin:$PATH"
 
-# ── Silence the "running as root" warning ───────────────────────────────────
-export FLUTTER_SUPPRESS_ANALYTICS=1
-export PUB_ENVIRONMENT=vercel
+# ── Suppress analytics prompts and CLI animations ───────────────────────────
+flutter config --no-analytics
+flutter config --no-cli-animations
 
 # ── Precache web artifacts ──────────────────────────────────────────────────
-flutter precache --web --no-version-check
+flutter precache --web
 
 # ── Get dependencies ────────────────────────────────────────────────────────
-flutter pub get --no-version-check
+flutter pub get
 
 # ── Build for web ───────────────────────────────────────────────────────────
-flutter build web --release --no-version-check
+flutter build web --release
