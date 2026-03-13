@@ -21,4 +21,10 @@ export FLUTTER_SUPPRESS_ANALYTICS=true
 export PUB_ENVIRONMENT=vercel_ci
 
 # ── Build for web (runs pub get automatically if needed) ────────────────────
-flutter build web --release
+flutter --suppress-analytics build web --release
+
+# Verify expected output exists
+if [ ! -f "build/web/index.html" ]; then
+  echo "Flutter build finished but build/web/index.html was not found."
+  exit 1
+fi
