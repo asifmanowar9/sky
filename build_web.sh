@@ -16,16 +16,9 @@ if [ ! -d "$FLUTTER_DIR" ]; then
 fi
 
 export PATH="$FLUTTER_DIR/bin:$PATH"
+export CI=true
+export FLUTTER_SUPPRESS_ANALYTICS=true
+export PUB_ENVIRONMENT=vercel_ci
 
-# ── Suppress analytics prompts and CLI animations ───────────────────────────
-flutter config --no-analytics
-flutter config --no-cli-animations
-
-# ── Precache web artifacts ──────────────────────────────────────────────────
-flutter precache --web
-
-# ── Get dependencies ────────────────────────────────────────────────────────
-flutter pub get
-
-# ── Build for web ───────────────────────────────────────────────────────────
+# ── Build for web (runs pub get automatically if needed) ────────────────────
 flutter build web --release
