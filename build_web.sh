@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-FLUTTER_VERSION="3.29.1"
+FLUTTER_VERSION="3.41.4"
 FLUTTER_DIR="/vercel/flutter"
 
 # ── Fix git "dubious ownership" error when running as root on Vercel ────────
